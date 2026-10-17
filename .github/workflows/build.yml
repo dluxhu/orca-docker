@@ -2,7 +2,8 @@ name: build
 
 # Every push and pull request: build the amd64 image and run the end-to-end
 # smoke test. Push to main and v* tags: also build amd64 + arm64 and publish to
-# GHCR (ghcr.io/<owner>/orca-docker), so a NAS pulls the right one.
+# GHCR (ghcr.io/<owner>/orca-docker), so a NAS pulls the right one. A manual
+# run (workflow_dispatch) on main publishes again.
 on:
   push:
     branches: ['**']
@@ -46,7 +47,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    # workflow_dispatch on main republishes, e.g. when a push was tagged wrong.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
