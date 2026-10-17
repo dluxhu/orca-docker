@@ -155,7 +155,8 @@ docker exec "${NAME}" sh -c 'cd /home/.config/orca/profiles/* && src=$(ls profil
 backup_now > /dev/null
 total="$(list_backups | grep -c . || true)"
 [ "${total}" = "5" ] || fail "expected 5 backups after pruning, found ${total}"
-[ "$(count_real)" = "${real_before}" ] || fail "pruning removed a real backup (${real_before} before, $(count_real) after)"
+# At least as many: a pass copies instead of renaming if Orca saved state meanwhile.
+[ "$(count_real)" -ge "${real_before}" ] || fail "pruning removed a real backup (${real_before} before, $(count_real) after)"
 list_backups | grep -q '^profile-state\.db\.backup\.1000000000001-' && fail "pruning kept the oldest backup"
 # The entrypoint runs the loop (ORCA_PROFILE_BACKUP=on).
 docker exec "${NAME}" pgrep -f 'orca-profile-backup --loop' > /dev/null || fail "orca-profile-backup loop is not running"
