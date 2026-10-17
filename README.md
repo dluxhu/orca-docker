@@ -37,8 +37,7 @@ You need DSM 7.2 or newer with Container Manager, and SSH access to the NAS.
    sudo chown -R 1026:100 /volume1/docker/orca/home
    ```
 
-   Do **not** put it on an encrypted shared folder. Orca writes file names of about 200
-   bytes, and eCryptfs allows about 143 (`ENAMETOOLONG`).
+   An encrypted shared folder is fine. See [Encrypted shared folders](#encrypted-shared-folders).
 
 2. Copy this repository to the NAS (for example `/volume1/docker/orca`) and make `.env`:
 
@@ -126,7 +125,9 @@ sudo docker compose -f docker-compose.yml -f docker-compose.docker.yml up -d
 ```
 
 The Docker socket is root access to the NAS for everything that runs in Orca. Add it only when
-you need it. Bind mounts (`docker run -v`) use paths on the NAS, not in this container:
+you need it. This includes the browser panes: Chromium runs without its sandbox (see
+[How it works](#how-it-works)), so with the socket a browser exploit can reach root on the NAS.
+Bind mounts (`docker run -v`) use paths on the NAS, not in this container:
 `/home/src/x` here is `$ORCA_HOST_HOME_DIR/src/x` for Docker. The overlay sets
 `ORCA_HOST_HOME_DIR` to `HOME_DIR`.
 
@@ -140,6 +141,7 @@ you need it. Bind mounts (`docker run -v`) use paths on the NAS, not in this con
 | `ORCA_PORT` | `6768` | Server port, inside and outside the container |
 | `ORCA_AGENTS` | `claude codex` | Agent CLIs installed on first start. `none` skips |
 | `ORCA_SERVE_ARGS` | | Extra `orca-ide serve` flags, e.g. `--mobile-pairing` |
+| `ORCA_PROFILE_BACKUP` | `auto` | `orca-profile-backup`: `auto` (only when `HOME_DIR` rejects long file names), `on`, `off` |
 | `GIT_USER_NAME`, `GIT_USER_EMAIL` | `Orca`, `orca@localhost` if unset | Git identity on the server |
 | `GH_TOKEN` | | Token for `gh` and `git push` over https |
 | `CLAUDE_CODE_OAUTH_TOKEN` | | Token from `claude setup-token` |
@@ -158,10 +160,26 @@ The container sees only `HOME_DIR`, mounted at `/home`:
 |---|---|
 | `.config/orca/` | Orca profile: projects, worktrees, paired clients, settings |
 | `.orca/` | Orca credentials and runtime data |
-| `.config/orca-docker/` | machine ID, `serve.log` (first 1000 lines of this run's output, holds the pairing link), agent install log |
+| `.config/orca-docker/` | machine ID, `serve.log` (first 1000 lines of this run's output, holds the pairing link), agent install and profile backup logs |
 | `.local/bin`, `.npm-global/bin` | agent CLIs, the `orca` CLI shim |
 | `.ssh/` | keys and config for SSH targets |
 | anything else | your repositories, e.g. `~/src` |
+
+## Encrypted shared folders
+
+Synology encrypted shared folders (eCryptfs) allow file names of 143 bytes at most. Orca works on
+them, with one exception: it stages its hourly profile backup in a file named about 183 bytes
+long, so that backup fails and Orca logs `Failed to back up profile state database` on each
+profile change.
+
+The image handles this. When `HOME_DIR` rejects long names, the entrypoint starts
+`orca-profile-backup`. It writes the same backup as Orca (SQLite backup API, checked, fsynced,
+renamed) with a short temporary name, under Orca's own final name, and keeps 5 like Orca.
+Orca skips its own job while a backup younger than one hour exists. `ORCA_PROFILE_BACKUP=on`
+or `off` overrides the detection. Log: `.config/orca-docker/profile-backup.log`.
+
+Tested on an encrypted shared folder: without the script a project change logs
+`ENAMETOOLONG`; with it, no error.
 
 ## How it works
 
@@ -199,7 +217,8 @@ the merge to `main` publishes it.
 
 - **Desktop shows Disconnected.** Check that `ORCA_PAIRING_ADDRESS` and the port are reachable
   from the laptop (`curl http://<address>:6768/` returns HTML).
-- **`ENAMETOOLONG` in the log.** `HOME_DIR` is on an encrypted shared folder. Move it.
+- **`ENAMETOOLONG` in the log.** A file name is longer than the 143 bytes an encrypted shared
+  folder allows. Orca's profile backups are handled (see below). Report other cases as an issue.
 - **`Failed to connect to the bus` lines.** Harmless: there is no D-Bus in the container.
 - **`secrets are stored unencrypted`.** The Electron runtime has no keyring in a container, so
   integration credentials (Linear, Jira) are stored in plain files in `HOME_DIR`. Protect

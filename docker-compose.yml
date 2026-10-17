@@ -28,6 +28,8 @@ services:
       - ORCA_AGENTS=${ORCA_AGENTS:-claude codex}
       # Extra flags for `orca-ide serve`, e.g. --mobile-pairing.
       - ORCA_SERVE_ARGS=${ORCA_SERVE_ARGS:-}
+      # Orca profile backups for encrypted shares: auto | on | off (see README).
+      - ORCA_PROFILE_BACKUP=${ORCA_PROFILE_BACKUP:-auto}
       - GIT_USER_NAME=${GIT_USER_NAME:-}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
       - GH_TOKEN=${GH_TOKEN:-}
@@ -39,7 +41,7 @@ services:
     volumes:
       # The ONLY directory the container can see. It is $HOME inside: Orca state
       # (~/.config/orca, ~/.orca), agent CLIs and their logins, ssh keys, and
-      # your projects. Must NOT be on an encrypted shared folder (see README).
+      # your projects. An encrypted shared folder is fine (see README).
       - ${HOME_DIR}:/home
     cap_drop:
       - ALL

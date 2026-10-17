@@ -7,7 +7,7 @@
 # Environment variables:
 #   ORCA_PAIRING_ADDRESS   REQUIRED: NAS LAN IP, Tailscale name/IP, or ws:// URL
 #   PUID, PGID             e.g. 1026 / 100 (run `id` on the NAS)
-#   HOME_DIR               e.g. /volume1/docker/orca/home (NOT an encrypted share)
+#   HOME_DIR               e.g. /volume1/docker/orca/home (an encrypted share is fine)
 #   ORCA_PORT              6768
 #   ORCA_AGENTS            claude codex   ("none" to skip)
 #   GIT_USER_NAME, GIT_USER_EMAIL, GH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, TZ (optional)
@@ -23,6 +23,7 @@ services:
       - ORCA_PORT=${ORCA_PORT:-6768}
       - ORCA_AGENTS=${ORCA_AGENTS:-claude codex}
       - ORCA_SERVE_ARGS=${ORCA_SERVE_ARGS:-}
+      - ORCA_PROFILE_BACKUP=${ORCA_PROFILE_BACKUP:-auto}
       - GIT_USER_NAME=${GIT_USER_NAME:-}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
       - GH_TOKEN=${GH_TOKEN:-}

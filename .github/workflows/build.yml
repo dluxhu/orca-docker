@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Lint shell scripts
-        run: shellcheck entrypoint.sh healthcheck.sh orca-pairing install-agents test/smoke.sh bin/bump-orca
+        run: shellcheck entrypoint.sh healthcheck.sh orca-pairing orca-profile-backup install-agents test/smoke.sh bin/bump-orca
 
       - uses: docker/setup-buildx-action@v3
 

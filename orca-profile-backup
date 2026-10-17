@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Write Orca's hourly profile-state backups with a short temporary file name.
+#
+# Orca stages each backup in a file named about 183 bytes long. Encrypted
+# Synology shared folders (eCryptfs) allow 143 bytes, so Orca's backup job
+# fails with ENAMETOOLONG and retries every minute. Orca skips its job while a
+# backup younger than one hour exists. This script makes that backup the way
+# Orca does (SQLite backup API, journal_mode=DELETE, check, fsync, rename) and
+# gives it Orca's final name, which is short enough.
+#
+#   orca-profile-backup          one pass over all profiles
+#   orca-profile-backup --loop   one pass every minute (the entrypoint starts this)
+set -euo pipefail
+
+PROFILES_DIR="${HOME}/.config/orca/profiles"
+KEEP=5                       # Orca keeps 5 backups too
+MAX_AGE_MS=$((50 * 60 * 1000))  # younger than Orca's 60 minutes, so Orca never starts its job
+BACKUP_RE='^profile-state\.db\.backup\.([1-9][0-9]*)-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.db$'
+
+log() { echo "[orca-profile-backup] $*" >&2; }
+
+# backups <dir>: print "<ms> <name>" for each Orca backup in <dir>, newest first.
+backups() {
+  local name
+  for name in "$1"/profile-state.db.backup.*.db; do
+    name="${name##*/}"
+    [[ "${name}" =~ ${BACKUP_RE} ]] && echo "${BASH_REMATCH[1]} ${name}"
+  done | sort -rn
+}
+
+backup_profile() {
+  local db="$1" dir now newest id tmp target
+  dir="$(dirname "${db}")"
+  now="$(date +%s%3N)"
+  newest="$(backups "${dir}" | head -n 1 | cut -d' ' -f1)"
+  if [ -n "${newest}" ] && [ $((now - newest)) -lt "${MAX_AGE_MS}" ]; then
+    return 0
+  fi
+
+  id="${now}-$(cat /proc/sys/kernel/random/uuid)"
+  tmp="${dir}/.orca-docker-backup.tmp"
+  target="${dir}/profile-state.db.backup.${id}.db"
+  rm -f "${tmp}" "${tmp}-journal" "${tmp}-wal" "${tmp}-shm"
+  if sqlite3 "${db}" ".timeout 30000" ".backup '${tmp}'" \
+    && [ "$(sqlite3 "${tmp}" 'PRAGMA journal_mode=DELETE;')" = "delete" ] \
+    && [ "$(sqlite3 "${tmp}" 'PRAGMA quick_check;')" = "ok" ]; then
+    chmod 0600 "${tmp}"
+    sync "${tmp}"
+    mv -f "${tmp}" "${target}"
+  else
+    rm -f "${tmp}" "${tmp}-journal" "${tmp}-wal" "${tmp}-shm"
+    log "backup of ${db} failed"
+    return 1
+  fi
+
+  backups "${dir}" | tail -n +$((KEEP + 1)) | while read -r _ name; do
+    rm -f "${dir}/${name}"
+  done
+}
+
+pass() {
+  local db
+  for db in "${PROFILES_DIR}"/*/profile-state.db; do
+    [ -f "${db}" ] || continue
+    backup_profile "${db}" || true
+  done
+}
+
+if [ "${1:-}" = "--loop" ]; then
+  while true; do
+    pass
+    sleep 60
+  done
+fi
+pass

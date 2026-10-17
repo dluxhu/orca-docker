@@ -115,9 +115,9 @@ RUN ln -sf /home/.config/orca-docker/machine-id /etc/machine-id \
     && mkdir -p /var/lib/dbus \
     && ln -sf /home/.config/orca-docker/machine-id /var/lib/dbus/machine-id
 
-COPY entrypoint.sh healthcheck.sh install-agents orca-pairing /usr/local/bin/
+COPY entrypoint.sh healthcheck.sh install-agents orca-pairing orca-profile-backup /usr/local/bin/
 RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh \
-      /usr/local/bin/install-agents /usr/local/bin/orca-pairing \
+      /usr/local/bin/install-agents /usr/local/bin/orca-pairing /usr/local/bin/orca-profile-backup \
     && ln -s "$(ls /usr/lib/*/libnss_wrapper.so)" /usr/local/lib/libnss_wrapper.so \
     && install -d -m 0755 /var/lib/orca-docker \
     && cp /etc/passwd /var/lib/orca-docker/passwd \

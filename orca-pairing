@@ -13,6 +13,9 @@ if ! grep -q '^Pairing URL:' "${SERVE_LOG}"; then
   echo >&2
   echo "No pairing link. If the server is still starting, wait for 'Orca server ready' in the" >&2
   echo "container log. A 'Pairing unavailable' line above gives the reason." >&2
+  if [ "$(wc -l < "${SERVE_LOG}")" -ge 1000 ]; then
+    echo "${SERVE_LOG} keeps only the first 1000 lines and is full: look in 'docker logs orca-server'." >&2
+  fi
   exit 1
 fi
 

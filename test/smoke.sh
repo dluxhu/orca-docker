@@ -25,7 +25,7 @@ cleanup() {
   docker rm -f "${NAME}" >/dev/null 2>&1 || true
   docker network rm "${NET}" >/dev/null 2>&1 || true
   # Server and client run as the test uid, so a plain rm works.
-  rm -rf "${WORK}"
+  rm -rf "${WORK}" || echo "WARN: could not remove ${WORK}" >&2
 }
 trap cleanup EXIT
 
@@ -37,6 +37,7 @@ start_server() {
     --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges:true \
     -e ORCA_PAIRING_ADDRESS="${NAME}" \
     -e ORCA_AGENTS="${ORCA_AGENTS:-claude codex}" \
+    -e ORCA_PROFILE_BACKUP=on \
     -v "${SERVER_HOME}:/home" \
     "${IMAGE}" >/dev/null
 }
@@ -96,6 +97,17 @@ for tool in git gh ssh docker node npm python3 rg Xvfb; do
   docker exec "${NAME}" sh -c "command -v ${tool}" >/dev/null || fail "tool '${tool}' missing"
 done
 pass "toolbox present"
+
+# CI has no eCryptfs, so the test forces orca-profile-backup on (ORCA_PROFILE_BACKUP=on).
+deadline=$((SECONDS + 120))
+until docker exec "${NAME}" sh -c 'ls /home/.config/orca/profiles/*/ 2>/dev/null' \
+    | grep -Eq '^profile-state\.db\.backup\.[1-9][0-9]*-[0-9a-f-]{36}\.db$'; do
+  [ "${SECONDS}" -lt "${deadline}" ] || fail "orca-profile-backup wrote no backup in 120s"
+  sleep 5
+done
+docker exec "${NAME}" sh -c 'for f in /home/.config/orca/profiles/*/profile-state.db.backup.*.db; do
+    [ "$(sqlite3 "$f" "PRAGMA quick_check;")" = ok ] || exit 1; done' || fail "profile backup is not a valid database"
+pass "orca-profile-backup wrote a valid Orca backup"
 
 echo "== pair a client"
 url1="$(pairing_url)"

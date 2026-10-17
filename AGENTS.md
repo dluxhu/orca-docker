@@ -10,6 +10,7 @@ Dockerfile                 node:22-bookworm-slim + Orca .deb (pinned version + S
 entrypoint.sh              nss_wrapper files, machine-id, git identity, agent install, startup.sh, exec serve
 healthcheck.sh             HTTP GET / on ORCA_PORT
 orca-pairing               prints pairing links from ~/.config/orca-docker/serve.log
+orca-profile-backup        Orca-format profile backups with short temp names (eCryptfs)
 install-agents             agent CLI installer (copy of claude-syno-nas terminal/install-agents)
 docker-compose.yml         default deploy (GHCR image, or --build)
 docker-compose.docker.yml  opt-in overlay: host Docker socket
@@ -33,7 +34,11 @@ bin/bump-orca              set ORCA_VERSION and .deb checksums from a GitHub rel
   image files (mode 0666), rewritten by the entrypoint on every start.
 - `/etc/machine-id` links to `/home/.config/orca-docker/machine-id` (Orca credential key).
 - Unix socket paths under `$HOME/.config/orca` must stay under 108 bytes, so `HOME=/home`.
-- eCryptfs (Synology encrypted shares) rejects Orca's long temporary file names.
+- eCryptfs (Synology encrypted shares) allows 143-byte names. Orca's profile backup stages a
+  ~183-byte temp name (`<db>.backup.<id>.db.owner-<sha256(boot_id, pid ns)>.<pid>.<ts>.<hex>.tmp`),
+  not configurable. Orca schedules a backup after each profile-state write and skips it while a
+  backup younger than 1 h exists (5 kept). `orca-profile-backup` writes those backups with a short
+  temp name; the entrypoint starts it when `$HOME` rejects a 207-byte name (`ORCA_PROFILE_BACKUP`).
 - A pairing link pairs one client; a restart prints a new link once the old one is used.
   Paired grants persist in `~/.config/orca`.
 - A stop takes about a second (CI). The serve supervisor force-kills its child after 35 s;

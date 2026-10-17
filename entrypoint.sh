@@ -99,6 +99,26 @@ if [ -n "${agents}" ] && [ "${agents}" != "none" ]; then
   done
 fi
 
+# Profile backups. Orca stages its hourly profile backup in a file named
+# about 183 bytes long. Encrypted Synology shared folders (eCryptfs) allow
+# 143, so Orca's backup fails. orca-profile-backup then writes the backups
+# with a short temporary name. auto: only when $HOME rejects long names.
+long_names_ok() {
+  local probe
+  probe="${STATE_DIR}/.probe-$(printf 'n%.0s' $(seq 1 200))"
+  if touch "${probe}" 2>/dev/null; then rm -f "${probe}"; return 0; fi
+  return 1
+}
+case "${ORCA_PROFILE_BACKUP:-auto}" in
+  on) profile_backup=1 ;;
+  off) profile_backup=0 ;;
+  *) if long_names_ok; then profile_backup=0; else profile_backup=1; fi ;;
+esac
+if [ "${profile_backup}" = "1" ]; then
+  log "writing Orca profile backups with short file names (orca-profile-backup)"
+  nohup orca-profile-backup --loop >> "${STATE_DIR}/profile-backup.log" 2>&1 &
+fi
+
 # User startup hook: runs on every start, as the container user, in the
 # background, before Orca starts. Output goes to a log next to it.
 STARTUP_SCRIPT="${HOME}/.config/startup.sh"
@@ -113,7 +133,7 @@ fi
 # the file does not grow. The server keeps its PID (exec), so it gets the stop
 # signal from tini directly.
 ( umask 077; : > "${SERVE_LOG}" )
-exec > >(tee >({ stdbuf -oL head -n 1000 >> "${SERVE_LOG}"; cat > /dev/null; })) 2>&1
+exec > >(tee >({ stdbuf -oL head -n 1000 >> "${SERVE_LOG}" || true; cat > /dev/null; })) 2>&1
 
 # Extra flags, for example ORCA_SERVE_ARGS="--mobile-pairing".
 read -r -a extra_args <<< "${ORCA_SERVE_ARGS:-}"
