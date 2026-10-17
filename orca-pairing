@@ -7,13 +7,29 @@ set -euo pipefail
 SERVE_LOG="${HOME}/.config/orca-docker/serve.log"
 [ -r "${SERVE_LOG}" ] || { echo "No server output yet (${SERVE_LOG}). Is the server running?" >&2; exit 1; }
 
-if ! grep -E '^(Orca server ready|Bound endpoint|Advertised endpoint|Pairing URL|Web client URL|Mobile)' "${SERVE_LOG}"; then
-  echo "The server has not printed a pairing link yet. Wait for 'Orca server ready' in the container log." >&2
+grep -E '^(Orca server ready|Bound endpoint|Advertised endpoint|Pairing|Web client URL|Mobile)' "${SERVE_LOG}" || true
+
+if ! grep -q '^Pairing URL:' "${SERVE_LOG}"; then
+  echo >&2
+  echo "No pairing link. If the server is still starting, wait for 'Orca server ready' in the" >&2
+  echo "container log. A 'Pairing unavailable' line above gives the reason." >&2
   exit 1
 fi
-cat <<'NOTE'
 
+echo
+case " ${ORCA_SERVE_ARGS:-} " in
+  *" --mobile-pairing "*)
+    cat <<'NOTE'
+ORCA_SERVE_ARGS has --mobile-pairing: this link is for Orca Mobile only. Scan the QR code in
+`docker logs orca-server`, or paste the link in Orca Mobile. To pair a desktop or a browser,
+remove the flag and restart the container.
+NOTE
+    ;;
+  *)
+    cat <<'NOTE'
 Desktop: Settings → Remote Orca Servers → Add Server → paste the Pairing URL.
 Browser: open the Web client URL.
-A link pairs one client. For another client, restart the container to print a new link.
 NOTE
+    ;;
+esac
+echo "A link pairs one client. For another client, restart the container to print a new link."

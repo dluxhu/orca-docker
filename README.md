@@ -75,7 +75,7 @@ Portainer users: use [`portainer/orca-stack.yml`](portainer/orca-stack.yml).
 |---|---|
 | Orca desktop | Paste the `Pairing URL` (`orca://pair?code=…`) in **Settings → Remote Orca Servers → Add Server** |
 | Browser | Open the `Web client URL` that `orca-pairing` prints |
-| Orca Mobile | Set `ORCA_SERVE_ARGS=--mobile-pairing`, restart, scan the QR code in the log |
+| Orca Mobile | Set `ORCA_SERVE_ARGS=--mobile-pairing`, restart, scan the QR code in `docker logs`. While the flag is set, the link pairs Orca Mobile only |
 | Orca CLI | `orca environment add --name nas --pairing-code '<Pairing URL>'`, then `--environment nas` on any command |
 
 A pairing link pairs **one** client. Each paired client keeps its own revocable grant across
@@ -126,7 +126,9 @@ sudo docker compose -f docker-compose.yml -f docker-compose.docker.yml up -d
 ```
 
 The Docker socket is root access to the NAS for everything that runs in Orca. Add it only when
-you need it.
+you need it. Bind mounts (`docker run -v`) use paths on the NAS, not in this container:
+`/home/src/x` here is `$ORCA_HOST_HOME_DIR/src/x` for Docker. The overlay sets
+`ORCA_HOST_HOME_DIR` to `HOME_DIR`.
 
 ## Configuration
 
@@ -156,7 +158,7 @@ The container sees only `HOME_DIR`, mounted at `/home`:
 |---|---|
 | `.config/orca/` | Orca profile: projects, worktrees, paired clients, settings |
 | `.orca/` | Orca credentials and runtime data |
-| `.config/orca-docker/` | machine ID, `serve.log` (this run's output, holds the pairing link), agent install log |
+| `.config/orca-docker/` | machine ID, `serve.log` (first 1000 lines of this run's output, holds the pairing link), agent install log |
 | `.local/bin`, `.npm-global/bin` | agent CLIs, the `orca` CLI shim |
 | `.ssh/` | keys and config for SSH targets |
 | anything else | your repositories, e.g. `~/src` |
@@ -175,7 +177,8 @@ The container sees only `HOME_DIR`, mounted at `/home`:
   `nss_wrapper` gives that uid a passwd entry (`orca`, home `/home`), also in `docker exec`.
 - `/etc/machine-id` links to the home folder, so Orca's credential key stays valid across
   image updates.
-- `tini` is PID 1. Orca needs up to about 30 s to stop, so compose waits 60 s.
+- `tini` is PID 1. Orca's stop supervisor kills a hung server after 35 s, so compose waits
+  60 s. A normal stop takes about a second.
 
 Orca 1.4.227 `serve` was run on a Synology NAS (DSM, Linux 4.4 kernel) as a non-root user with
 all capabilities dropped and nss_wrapper, the same settings as this image. CI tests the image:
@@ -189,7 +192,8 @@ sudo docker compose pull && sudo docker compose up -d
 ```
 
 Image tags: `latest`, `orca-<version>` (e.g. `orca-1.4.227`), `sha-<commit>`. To package a new
-Orca release, run `bin/bump-orca [version]` and push to `main`; CI tests and publishes it.
+Orca release, run `bin/bump-orca [version]` on a branch and open a pull request. CI tests it;
+the merge to `main` publishes it.
 
 ## Troubleshooting
 

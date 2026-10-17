@@ -37,7 +37,7 @@ has_id() { awk -F: -v id="$1" '$3 == id { found = 1 } END { exit !found }' "$2";
 # The files are rewritten in place: the container user cannot create files
 # in /var/lib/orca-docker.
 if [ "$(id -u)" = "0" ]; then
-  passwd_lines="$(cat /etc/passwd)"
+  passwd_lines="$(awk -F: -v OFS=: -v h="${HOME}" '$3 == 0 { $6 = h } 1' /etc/passwd)"
 else
   passwd_lines="$(awk -F: -v id="$(id -u)" '$3 != id' /etc/passwd)
 orca:x:$(id -u):$(id -g):Orca:${HOME}:/bin/bash"
@@ -87,8 +87,10 @@ agent_command() {
     *) echo "$1" ;;
   esac
 }
-if [ -n "${ORCA_AGENTS:-}" ] && [ "${ORCA_AGENTS}" != "none" ]; then
-  for agent in ${ORCA_AGENTS}; do
+agents="${ORCA_AGENTS:-}"
+[ "${agents}" = "all" ] && agents="$(install-agents list | awk '{ print $1 }')"
+if [ -n "${agents}" ] && [ "${agents}" != "none" ]; then
+  for agent in ${agents}; do
     command -v "$(agent_command "${agent}")" >/dev/null 2>&1 && continue
     log "installing agent CLI: ${agent} (log: ${STATE_DIR}/install-agents.log)"
     if ! install-agents "${agent}" >> "${STATE_DIR}/install-agents.log" 2>&1; then
@@ -105,11 +107,13 @@ if [ -f "${STARTUP_SCRIPT}" ]; then
   (cd "${HOME}" && nohup bash "${STARTUP_SCRIPT}" > "${HOME}/.config/startup.log" 2>&1 &)
 fi
 
-# Keep a copy of this run's output for `orca-pairing`. It holds the pairing
-# secret, so only the owner can read it. The server keeps its PID (exec), so
-# it gets the stop signal from tini directly.
+# Keep the first lines of this run's output for `orca-pairing`. They hold the
+# pairing secret, so only the owner can read the file. head writes each line
+# at once (stdbuf -oL); cat then drains the rest, so tee never gets SIGPIPE and
+# the file does not grow. The server keeps its PID (exec), so it gets the stop
+# signal from tini directly.
 ( umask 077; : > "${SERVE_LOG}" )
-exec > >(tee -a "${SERVE_LOG}") 2>&1
+exec > >(tee >({ stdbuf -oL head -n 1000 >> "${SERVE_LOG}"; cat > /dev/null; })) 2>&1
 
 # Extra flags, for example ORCA_SERVE_ARGS="--mobile-pairing".
 read -r -a extra_args <<< "${ORCA_SERVE_ARGS:-}"

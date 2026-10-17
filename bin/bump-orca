@@ -11,7 +11,7 @@ version="${version#v}"
 
 digest() {
   gh api "repos/stablyai/orca/releases/tags/v${version}" \
-    --jq ".assets[] | select(.name == \"orca-ide_${version}_$1.deb\") | .digest" \
+    --jq ".assets[] | select(.name == \"orca-ide_${version}_$1.deb\") | .digest // empty" \
     | sed 's/^sha256://'
 }
 amd64="$(digest amd64)"

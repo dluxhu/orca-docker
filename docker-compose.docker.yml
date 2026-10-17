@@ -9,8 +9,13 @@
 #
 # DOCKER_GID is the group of the socket on the host. On the NAS:
 #   stat -c %g /var/run/docker.sock
+#
+# Bind mounts in `docker run -v` use paths on the HOST, not in this container.
+# ORCA_HOST_HOME_DIR tells scripts where /home is on the host.
 services:
   orca:
+    environment:
+      - ORCA_HOST_HOME_DIR=${HOME_DIR}
     group_add:
       - "${DOCKER_GID:?set DOCKER_GID to the group id of /var/run/docker.sock}"
     volumes:

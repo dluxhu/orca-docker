@@ -24,8 +24,8 @@ fail() { echo "FAIL: $*" >&2; docker logs "${NAME}" 2>&1 | tail -60 >&2 || true;
 cleanup() {
   docker rm -f "${NAME}" >/dev/null 2>&1 || true
   docker network rm "${NET}" >/dev/null 2>&1 || true
-  # Files in the homes belong to the test uid, so a plain rm works.
-  rm -rf "${WORK}" 2>/dev/null || true
+  # Server and client run as the test uid, so a plain rm works.
+  rm -rf "${WORK}"
 }
 trap cleanup EXIT
 
@@ -57,9 +57,10 @@ wait_ready() {
 
 pairing_url() { docker exec "${NAME}" orca-pairing | sed -n 's/^Pairing URL: //p' | tail -1; }
 
-# client <args...>: run the Orca CLI in a separate container, as root, with its own home.
+# client <args...>: run the Orca CLI in a separate container with its own home.
+# The CLI finds its data through $HOME and needs no passwd entry.
 client() {
-  docker run --rm --network "${NET}" -e LD_PRELOAD= -v "${CLIENT_HOME}:/home" \
+  docker run --rm --network "${NET}" --user "$(id -u):$(id -g)" -v "${CLIENT_HOME}:/home" \
     --entrypoint orca-ide "${IMAGE}" "$@"
 }
 
@@ -116,6 +117,10 @@ stop_secs=$((SECONDS - start))
 exit_code="$(docker inspect -f '{{.State.ExitCode}}' "${NAME}")"
 echo "stop took ${stop_secs}s, exit code ${exit_code}"
 [ "${stop_secs}" -lt 60 ] || fail "server did not stop within 60s"
+case "${exit_code}" in
+  0|143) ;;
+  *) fail "server exit code ${exit_code} on SIGTERM" ;;
+esac
 pass "clean stop in ${stop_secs}s"
 
 docker start "${NAME}" >/dev/null

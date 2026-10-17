@@ -36,7 +36,17 @@ bin/bump-orca              set ORCA_VERSION and .deb checksums from a GitHub rel
 - eCryptfs (Synology encrypted shares) rejects Orca's long temporary file names.
 - A pairing link pairs one client; a restart prints a new link once the old one is used.
   Paired grants persist in `~/.config/orca`.
-- Stop takes up to about 30 s; compose uses `stop_grace_period: 60s`.
+- A stop takes about a second (CI). The serve supervisor force-kills its child after 35 s;
+  compose uses `stop_grace_period: 60s`.
+
+## Known gaps
+
+- The nss_wrapper files are mode 0666, so any process in the container can rewrite them, and a
+  `docker exec -u 0` shell reads them too. The entrypoint rewrites them in place, so a
+  `docker exec` during startup can read a partial file. Low risk in a single-user container.
+- With `--mobile-pairing` there is no desktop or browser link (Orca makes one link per scope).
+- SSH targets on the server are configured from a paired desktop client (Settings → SSH). This
+  path is not covered by CI.
 
 ## Local testing without Docker
 

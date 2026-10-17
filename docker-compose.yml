@@ -45,7 +45,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    # Orca needs time to close terminals and save state on stop.
+    # Orca's stop supervisor kills a hung server after 35 s; give it time.
     stop_grace_period: 60s
     networks:
       - orca-net

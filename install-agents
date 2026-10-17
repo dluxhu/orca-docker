@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the coding-agent CLIs into $HOME (the persistent mount), where they
-# survive image updates and keep themselves up to date. Run it from a shell
-# inside the container (web terminal or ssh):
+# survive image updates and keep themselves up to date. Run it inside the
+# container, e.g. `docker exec -it orca-server install-agents claude`:
 #
 #   install-agents all              # everything below
 #   install-agents claude cline     # just the ones you want
