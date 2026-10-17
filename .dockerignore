@@ -1,0 +1,10 @@
+.git
+.github
+.local-test
+.env
+.env.example
+portainer
+test
+bin
+*.md
+docker-compose*.yml

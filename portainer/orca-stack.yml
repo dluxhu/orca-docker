@@ -1,0 +1,42 @@
+# Portainer stack: Orca remote server, pulled from GHCR.
+#
+# Portainer → Stacks → Add stack → name it "orca" → paste this file → set the
+# environment variables below → Deploy. Then get the pairing link:
+#   docker exec orca-server orca-pairing
+#
+# Environment variables:
+#   ORCA_PAIRING_ADDRESS   REQUIRED: NAS LAN IP, Tailscale name/IP, or ws:// URL
+#   PUID, PGID             e.g. 1026 / 100 (run `id` on the NAS)
+#   HOME_DIR               e.g. /volume1/docker/orca/home (NOT an encrypted share)
+#   ORCA_PORT              6768
+#   ORCA_AGENTS            claude codex   ("none" to skip)
+#   GIT_USER_NAME, GIT_USER_EMAIL, GH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, TZ (optional)
+
+services:
+  orca:
+    image: ghcr.io/dluxhu/orca-docker:latest
+    container_name: orca-server
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    environment:
+      - ORCA_PAIRING_ADDRESS=${ORCA_PAIRING_ADDRESS}
+      - ORCA_PORT=${ORCA_PORT:-6768}
+      - ORCA_AGENTS=${ORCA_AGENTS:-claude codex}
+      - ORCA_SERVE_ARGS=${ORCA_SERVE_ARGS:-}
+      - GIT_USER_NAME=${GIT_USER_NAME:-}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
+      - GH_TOKEN=${GH_TOKEN:-}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      - TZ=${TZ:-UTC}
+    ports:
+      - "${ORCA_PORT:-6768}:${ORCA_PORT:-6768}"
+    volumes:
+      - ${HOME_DIR}:/home
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 60s
+    networks: [orca-net]
+
+networks:
+  orca-net:
+    driver: bridge

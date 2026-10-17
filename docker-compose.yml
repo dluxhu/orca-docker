@@ -1,0 +1,55 @@
+# Orca remote server. Desktop, browser and mobile Orca clients pair with it.
+# Deploy:  docker compose up -d                  (pulls the prebuilt GHCR image)
+#          docker compose up -d --build          (builds from this folder)
+# Pairing: docker exec orca-server orca-pairing
+#
+# Optional Docker access (per-workspace containers): add docker-compose.docker.yml,
+#   docker compose -f docker-compose.yml -f docker-compose.docker.yml up -d
+name: orca
+
+services:
+  orca:
+    image: ghcr.io/dluxhu/orca-docker:latest
+    build:
+      context: .
+      args:
+        # Extra apt packages baked in at build time, e.g. EXTRA_PACKAGES="golang htop"
+        EXTRA_PACKAGES: ${EXTRA_PACKAGES:-}
+    container_name: orca-server
+    restart: unless-stopped
+    # Run as the NAS user that owns HOME_DIR: correct file ownership, no root.
+    user: "${PUID}:${PGID}"
+    environment:
+      # REQUIRED. The address clients dial: NAS LAN IP, Tailscale name or IP,
+      # or a full ws:// / wss:// URL (needed when the published port differs).
+      - ORCA_PAIRING_ADDRESS=${ORCA_PAIRING_ADDRESS:-}
+      - ORCA_PORT=${ORCA_PORT:-6768}
+      # Agent CLIs installed into HOME_DIR on first start ("none" to skip).
+      - ORCA_AGENTS=${ORCA_AGENTS:-claude codex}
+      # Extra flags for `orca-ide serve`, e.g. --mobile-pairing.
+      - ORCA_SERVE_ARGS=${ORCA_SERVE_ARGS:-}
+      - GIT_USER_NAME=${GIT_USER_NAME:-}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
+      - GH_TOKEN=${GH_TOKEN:-}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      - TZ=${TZ:-UTC}
+    ports:
+      # Same port inside and outside, so a bare-host pairing address is right.
+      - "${ORCA_PORT:-6768}:${ORCA_PORT:-6768}"
+    volumes:
+      # The ONLY directory the container can see. It is $HOME inside: Orca state
+      # (~/.config/orca, ~/.orca), agent CLIs and their logins, ssh keys, and
+      # your projects. Must NOT be on an encrypted shared folder (see README).
+      - ${HOME_DIR}:/home
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Orca needs time to close terminals and save state on stop.
+    stop_grace_period: 60s
+    networks:
+      - orca-net
+
+networks:
+  orca-net:
+    driver: bridge

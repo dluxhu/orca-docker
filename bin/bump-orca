@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Point the Dockerfile at another Orca release and its .deb checksums.
+#   bin/bump-orca            # latest release
+#   bin/bump-orca 1.4.230    # a given release
+# Needs gh (authenticated) and jq. The checksums come from the GitHub release.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+version="${1:-$(gh api repos/stablyai/orca/releases/latest --jq .tag_name)}"
+version="${version#v}"
+
+digest() {
+  gh api "repos/stablyai/orca/releases/tags/v${version}" \
+    --jq ".assets[] | select(.name == \"orca-ide_${version}_$1.deb\") | .digest" \
+    | sed 's/^sha256://'
+}
+amd64="$(digest amd64)"
+arm64="$(digest arm64)"
+if [ -z "${amd64}" ] || [ -z "${arm64}" ]; then
+  echo "no .deb checksums for v${version}" >&2
+  exit 1
+fi
+
+sed -i \
+  -e "s/^ARG ORCA_VERSION=.*/ARG ORCA_VERSION=${version}/" \
+  -e "s/^ARG ORCA_DEB_SHA256_AMD64=.*/ARG ORCA_DEB_SHA256_AMD64=${amd64}/" \
+  -e "s/^ARG ORCA_DEB_SHA256_ARM64=.*/ARG ORCA_DEB_SHA256_ARM64=${arm64}/" \
+  Dockerfile
+grep -E '^ARG ORCA_(VERSION|DEB_SHA256)' Dockerfile

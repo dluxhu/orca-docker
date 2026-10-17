@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Install the coding-agent CLIs into $HOME (the persistent mount), where they
+# survive image updates and keep themselves up to date. Run it from a shell
+# inside the container (web terminal or ssh):
+#
+#   install-agents all              # everything below
+#   install-agents claude cline     # just the ones you want
+#   install-agents list             # show what's available
+#
+# Two install styles:
+#   vendor installer (curl | sh) → ~/.local/bin (or vendor dir + launcher);
+#     these self-update: claude, grok, aider, goose, cursor, droid
+#   npm global → ~/.npm-global/bin; update with `npm update -g <pkg>`:
+#     cline, codex, gemini, copilot, qwen, opencode, amp, auggie, crush
+#
+# Both bin dirs are already on PATH in the image.
+set -euo pipefail
+
+ALL_AGENTS=(claude grok aider goose cursor droid
+            cline codex gemini copilot qwen opencode amp auggie crush)
+
+list_agents() {
+  cat <<'EOF'
+claude    Claude Code (Anthropic)          vendor installer
+grok      Grok Build (xAI)                 vendor installer
+aider     Aider                            vendor installer (uv)
+goose     Goose (Block)                    vendor installer
+cursor    Cursor Agent (cursor-agent)      vendor installer
+droid     Droid (Factory)                  vendor installer
+cline     Cline                            npm: cline
+codex     Codex CLI (OpenAI)               npm: @openai/codex
+gemini    Gemini CLI (Google)              npm: @google/gemini-cli
+copilot   Copilot CLI (GitHub)             npm: @github/copilot
+qwen      Qwen Code (Alibaba)              npm: @qwen-code/qwen-code
+opencode  OpenCode (SST)                   npm: opencode-ai
+amp       Amp (Sourcegraph/Ampcode)        npm: @ampcode/cli
+auggie    Auggie (Augment Code)            npm: @augmentcode/auggie
+crush     Crush (Charm)                    npm: @charmland/crush
+EOF
+}
+
+npm_agent() {  # npm_agent <name> <package>
+  echo "── installing ${1} into ~/.npm-global (npm: ${2}) ──"
+  npm install -g "${2}@latest"
+}
+
+if [ $# -eq 0 ]; then
+  echo "Usage: install-agents all | list | [agent...]" >&2
+  echo >&2
+  list_agents >&2
+  exit 1
+fi
+
+if [ "$1" = "list" ]; then
+  list_agents
+  exit 0
+fi
+
+[ "$1" = "all" ] && set -- "${ALL_AGENTS[@]}"
+
+mkdir -p "${HOME}/.local/bin"
+
+for agent in "$@"; do
+  case "${agent}" in
+    claude)
+      echo "── installing claude (Claude Code) into ~/.local ──"
+      curl -fsSL https://claude.ai/install.sh | bash
+      ;;
+    grok)
+      echo "── installing grok (Grok Build) into ~/.grok ──"
+      GROK_BIN_DIR="${HOME}/.local/bin" bash -c \
+        "curl -fsSL https://x.ai/cli/install.sh | bash"
+      ;;
+    aider)
+      echo "── installing aider into ~/.local/bin (via uv) ──"
+      curl -LsSf https://aider.chat/install.sh | sh
+      ;;
+    goose)
+      echo "── installing goose (Block) into ~/.local/bin ──"
+      curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh \
+        | CONFIGURE=false GOOSE_BIN_DIR="${HOME}/.local/bin" bash
+      ;;
+    cursor)
+      echo "── installing cursor-agent (Cursor) into ~/.local/bin ──"
+      curl -fsS https://cursor.com/install | bash
+      ;;
+    droid)
+      echo "── installing droid (Factory) into ~/.factory ──"
+      curl -fsSL https://app.factory.ai/cli | sh
+      # the installer edits shell rc files; a symlink makes it work everywhere
+      [ -x "${HOME}/.factory/bin/droid" ] \
+        && ln -sf "${HOME}/.factory/bin/droid" "${HOME}/.local/bin/droid"
+      ;;
+    cline)    npm_agent cline    cline ;;
+    codex)    npm_agent codex    @openai/codex ;;
+    gemini)   npm_agent gemini   @google/gemini-cli ;;
+    copilot)  npm_agent copilot  @github/copilot ;;
+    qwen)     npm_agent qwen     @qwen-code/qwen-code ;;
+    opencode) npm_agent opencode opencode-ai ;;
+    amp)      npm_agent amp      @ampcode/cli ;;
+    auggie)   npm_agent auggie   @augmentcode/auggie ;;
+    crush)    npm_agent crush    @charmland/crush ;;
+    *)
+      echo "ERROR: unknown agent '${agent}'. Run 'install-agents list' to see what's available." >&2
+      exit 1
+      ;;
+  esac
+done
+
+echo "Done. ~/.local/bin and ~/.npm-global/bin are already on PATH."
+echo "Most agents need a one-time login on first run (e.g. 'claude', 'copilot' + /login, 'auggie --login')."

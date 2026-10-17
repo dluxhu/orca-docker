@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Print the pairing links of the running Orca server.
+#   docker exec orca-server orca-pairing
+# The links grant access to this server. Treat them like a password.
+set -euo pipefail
+
+SERVE_LOG="${HOME}/.config/orca-docker/serve.log"
+[ -r "${SERVE_LOG}" ] || { echo "No server output yet (${SERVE_LOG}). Is the server running?" >&2; exit 1; }
+
+if ! grep -E '^(Orca server ready|Bound endpoint|Advertised endpoint|Pairing URL|Web client URL|Mobile)' "${SERVE_LOG}"; then
+  echo "The server has not printed a pairing link yet. Wait for 'Orca server ready' in the container log." >&2
+  exit 1
+fi
+cat <<'NOTE'
+
+Desktop: Settings → Remote Orca Servers → Add Server → paste the Pairing URL.
+Browser: open the Web client URL.
+A link pairs one client. For another client, restart the container to print a new link.
+NOTE

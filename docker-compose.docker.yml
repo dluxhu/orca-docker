@@ -1,0 +1,17 @@
+# Optional overlay: give Orca the host's Docker, so agents and per-workspace
+# recipes can start containers.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.docker.yml up -d
+#
+# WARNING: access to the Docker socket is root access to the host. Anything
+# that runs in Orca (every agent, every script it starts) gets it. Use this
+# only when you need it.
+#
+# DOCKER_GID is the group of the socket on the host. On the NAS:
+#   stat -c %g /var/run/docker.sock
+services:
+  orca:
+    group_add:
+      - "${DOCKER_GID:?set DOCKER_GID to the group id of /var/run/docker.sock}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
