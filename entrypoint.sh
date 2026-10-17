@@ -34,22 +34,21 @@ has_id() { awk -F: -v id="$1" '$3 == id { found = 1 } END { exit !found }' "$2";
 #
 # The current uid always gets home ${HOME}: OpenSSH reads ~/.ssh from the
 # passwd entry, not from $HOME (the base image has uid 1000 = /home/node).
+# The files are rewritten in place: the container user cannot create files
+# in /var/lib/orca-docker.
 if [ "$(id -u)" = "0" ]; then
-  cp /etc/passwd "${NSS_WRAPPER_PASSWD}.tmp"
+  passwd_lines="$(cat /etc/passwd)"
 else
-  {
-    awk -F: -v id="$(id -u)" '$3 != id' /etc/passwd
-    echo "orca:x:$(id -u):$(id -g):Orca:${HOME}:/bin/bash"
-  } > "${NSS_WRAPPER_PASSWD}.tmp"
+  passwd_lines="$(awk -F: -v id="$(id -u)" '$3 != id' /etc/passwd)
+orca:x:$(id -u):$(id -g):Orca:${HOME}:/bin/bash"
 fi
-{
-  cat /etc/group
-  for gid in $(id -G); do
-    has_id "${gid}" /etc/group || echo "group${gid}:x:${gid}:"
-  done
-} > "${NSS_WRAPPER_GROUP}.tmp"
-mv -f "${NSS_WRAPPER_PASSWD}.tmp" "${NSS_WRAPPER_PASSWD}"
-mv -f "${NSS_WRAPPER_GROUP}.tmp" "${NSS_WRAPPER_GROUP}"
+group_lines="$(cat /etc/group)"
+for gid in $(id -G); do
+  has_id "${gid}" /etc/group || group_lines="${group_lines}
+group${gid}:x:${gid}:"
+done
+printf '%s\n' "${passwd_lines}" > "${NSS_WRAPPER_PASSWD}"
+printf '%s\n' "${group_lines}" > "${NSS_WRAPPER_GROUP}"
 
 mkdir -p "${STATE_DIR}" "${HOME}/.local/bin" "${NPM_CONFIG_PREFIX}"
 

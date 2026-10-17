@@ -27,7 +27,8 @@ bin/bump-orca              set ORCA_VERSION and .deb checksums from a GitHub rel
 - `orca-ide serve` starts Xvfb on `:99` and Chromium with `--no-sandbox` itself. The image
   clears the setuid bit of `chrome-sandbox`.
 - Non-root `PUID:PGID`, `cap_drop: ALL`, `no-new-privileges`. `LD_PRELOAD=nss_wrapper` is image
-  ENV (after the last RUN); the entrypoint writes `/tmp/orca-docker-{passwd,group}`.
+  ENV (after the last RUN). It reads `/var/lib/orca-docker/{passwd,group}`: copies of the
+  image files (mode 0666), rewritten by the entrypoint on every start.
 - `/etc/machine-id` links to `/home/.config/orca-docker/machine-id` (Orca credential key).
 - Unix socket paths under `$HOME/.config/orca` must stay under 108 bytes, so `HOME=/home`.
 - eCryptfs (Synology encrypted shares) rejects Orca's long temporary file names.

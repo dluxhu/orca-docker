@@ -1,3 +1,6 @@
+# check=skip=SecretsUsedInArgOrEnv
+# (NSS_WRAPPER_PASSWD names a passwd file, not a secret.)
+
 # Orca remote server: the Orca runtime (`orca-ide serve`) without a desktop window.
 # Desktop, browser and mobile Orca clients pair with it over WebSocket.
 #
@@ -76,6 +79,8 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # Orca. apt resolves the package's own dependencies (GTK, NSS, Xvfb, xdotool, …).
+# The .deb does not declare every library Electron links (libgbm, libasound,
+# …), so they are named here. The ldd check fails the build if one is missing.
 RUN set -eux; \
     case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
       amd64) deb_arch=amd64; sha="${ORCA_DEB_SHA256_AMD64}" ;; \
@@ -87,10 +92,13 @@ RUN set -eux; \
       "https://github.com/stablyai/orca/releases/download/v${ORCA_VERSION}/orca-ide_${ORCA_VERSION}_${deb_arch}.deb"; \
     echo "${sha}  ${deb}" | sha256sum -c -; \
     apt-get update; \
-    apt-get install -y --no-install-recommends "${deb}"; \
+    apt-get install -y --no-install-recommends "${deb}" \
+      libgbm1 libasound2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
+      libxrandr2 libxfixes3 libxext6 libcups2 libdbus-1-3 libnspr4 libnss3 \
+      libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 libpango-1.0-0 libcairo2; \
     rm -rf /var/lib/apt/lists/* "${deb}"; \
     chmod 0755 /opt/Orca/chrome-sandbox; \
-    orca-ide --version || true
+    if ldd /opt/Orca/orca-ide | grep 'not found'; then exit 1; fi
 
 # User-defined extra apt packages, resolved at build time:
 #   EXTRA_PACKAGES="golang htop" docker compose up -d --build
@@ -110,7 +118,11 @@ RUN ln -sf /home/.config/orca-docker/machine-id /etc/machine-id \
 COPY entrypoint.sh healthcheck.sh install-agents orca-pairing /usr/local/bin/
 RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh \
       /usr/local/bin/install-agents /usr/local/bin/orca-pairing \
-    && ln -s "$(ls /usr/lib/*/libnss_wrapper.so)" /usr/local/lib/libnss_wrapper.so
+    && ln -s "$(ls /usr/lib/*/libnss_wrapper.so)" /usr/local/lib/libnss_wrapper.so \
+    && install -d -m 0755 /var/lib/orca-docker \
+    && cp /etc/passwd /var/lib/orca-docker/passwd \
+    && cp /etc/group /var/lib/orca-docker/group \
+    && chmod 0666 /var/lib/orca-docker/passwd /var/lib/orca-docker/group
 
 # Everything user-installed lands in $HOME so it survives image updates:
 #  - `pip install --user` (PEP 668 guard off) → /home/.local
@@ -127,12 +139,14 @@ ENV HOME=/home \
     ORCA_AGENTS="claude codex"
 WORKDIR /home
 
-# nss_wrapper gives the arbitrary PUID a passwd entry. The entrypoint writes
-# these files on every start. This ENV comes after the last RUN on purpose:
-# build steps must use the real /etc/passwd.
+# nss_wrapper gives the arbitrary PUID a passwd entry. The files start as
+# copies of /etc/passwd and /etc/group, so lookups work before the entrypoint
+# runs. The entrypoint rewrites them on every start (they are mode 0666: the
+# PUID is not known at build time). This ENV comes after the last RUN on
+# purpose: build steps use the real /etc/passwd.
 ENV LD_PRELOAD=/usr/local/lib/libnss_wrapper.so \
-    NSS_WRAPPER_PASSWD=/tmp/orca-docker-passwd \
-    NSS_WRAPPER_GROUP=/tmp/orca-docker-group
+    NSS_WRAPPER_PASSWD=/var/lib/orca-docker/passwd \
+    NSS_WRAPPER_GROUP=/var/lib/orca-docker/group
 
 LABEL org.opencontainers.image.title="orca-docker" \
       org.opencontainers.image.description="Orca remote server (orca-ide serve) for Docker and Synology NAS" \
