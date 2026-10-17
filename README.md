@@ -168,7 +168,9 @@ The container sees only `HOME_DIR`, mounted at `/home`:
   runtime does not (yet). In the 1.4.227 Linux packages the orcad selector also is not found
   (`Cannot find module …/app.asar.unpacked/out/main/orcad/orcad-local-serve-selection-entry.js`),
   so `serve` uses Electron anyway.
-- Orca starts its own Xvfb on `:99` for browser panes, and Chromium with `--no-sandbox`.
+- Orca starts its own Xvfb on `:99` for browser panes. Chromium runs without its sandbox
+  (`ELECTRON_DISABLE_SANDBOX=1`): a container with dropped capabilities and Docker's seccomp
+  profile cannot start it. The container is the isolation boundary.
 - The container runs as `PUID:PGID` with all capabilities dropped and `no-new-privileges`.
   `nss_wrapper` gives that uid a passwd entry (`orca`, home `/home`), also in `docker exec`.
 - `/etc/machine-id` links to the home folder, so Orca's credential key stays valid across

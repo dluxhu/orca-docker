@@ -24,8 +24,10 @@ bin/bump-orca              set ORCA_VERSION and .deb checksums from a GitHub rel
 - `ORCA_SERVE_RUNTIME=electron`. orcad cannot serve SSH targets. In the 1.4.227 Linux
   packages the orcad selector is also missing from `app.asar.unpacked`, so auto mode falls back
   to Electron after a MODULE_NOT_FOUND trace.
-- `orca-ide serve` starts Xvfb on `:99` and Chromium with `--no-sandbox` itself. The image
-  clears the setuid bit of `chrome-sandbox`.
+- `orca-ide serve` starts Xvfb on `:99` itself and passes `--no-sandbox` to its main process
+  only. Some child Electron process does not get it: on CI (no userns) it then aborted on the
+  non-setuid `chrome-sandbox`. `ELECTRON_DISABLE_SANDBOX=1` (image ENV) covers all processes.
+  The image clears the setuid bit of `chrome-sandbox`.
 - Non-root `PUID:PGID`, `cap_drop: ALL`, `no-new-privileges`. `LD_PRELOAD=nss_wrapper` is image
   ENV (after the last RUN). It reads `/var/lib/orca-docker/{passwd,group}`: copies of the
   image files (mode 0666), rewritten by the entrypoint on every start.

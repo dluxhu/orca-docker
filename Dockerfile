@@ -124,6 +124,12 @@ RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh \
     && cp /etc/group /var/lib/orca-docker/group \
     && chmod 0666 /var/lib/orca-docker/passwd /var/lib/orca-docker/group
 
+# Chromium sandbox: the container has no user namespaces (Docker's seccomp
+# profile) and no setuid (no-new-privileges), so no sandbox can start.
+# `orca-ide serve` passes --no-sandbox to its main process only;
+# ELECTRON_DISABLE_SANDBOX=1 covers every Electron process it starts.
+# The container itself is the isolation boundary.
+#
 # Everything user-installed lands in $HOME so it survives image updates:
 #  - `pip install --user` (PEP 668 guard off) → /home/.local
 #  - `npm install -g`                         → /home/.npm-global
@@ -136,6 +142,7 @@ ENV HOME=/home \
     PATH=/home/.local/bin:/home/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     ORCA_PORT=6768 \
     ORCA_SERVE_RUNTIME=electron \
+    ELECTRON_DISABLE_SANDBOX=1 \
     ORCA_AGENTS="claude codex"
 WORKDIR /home
 
