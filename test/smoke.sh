@@ -159,7 +159,7 @@ total="$(list_backups | grep -c . || true)"
 list_backups | grep -q '^profile-state\.db\.backup\.1000000000001-' && fail "pruning kept the oldest backup"
 # The entrypoint runs the loop (ORCA_PROFILE_BACKUP=on).
 docker exec "${NAME}" pgrep -f 'orca-profile-backup --loop' > /dev/null || fail "orca-profile-backup loop is not running"
-docker logs "${NAME}" 2>&1 | grep -q 'writing Orca profile backups' || fail "entrypoint did not start orca-profile-backup"
+docker logs "${NAME}" 2>&1 | grep 'writing Orca profile backups' > /dev/null || fail "entrypoint did not start orca-profile-backup"
 pass "orca-profile-backup: copy on change, rename when unchanged, valid databases, keeps 5, loop running"
 
 echo "== restart"
