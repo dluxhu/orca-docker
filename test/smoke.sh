@@ -124,20 +124,43 @@ echo "${out}" | grep -Eq '(wrote|renamed) profile-state\.db\.backup\.' || fail "
 docker exec "${NAME}" sh -c 'git init -q -b main /home/smoke-repo && git -C /home/smoke-repo commit -q --allow-empty -m init'
 rev_before="$(db_revision)"
 client repo add --environment smoke --path /home/smoke-repo --json > "${WORK}/repo.json" || { cat "${WORK}/repo.json" >&2; fail "repo add"; }
-# Orca saves profile state after a short delay.
-deadline=$((SECONDS + 60))
-until rev="$(db_revision)" && [ "${rev}" != "${rev_before}" ]; do
-  [ "${SECONDS}" -lt "${deadline}" ] || fail "profile revision did not change after repo add"
-  sleep 2
+# Orca saves profile state after a short delay, maybe more than once. Wait
+# until the revision has changed and then stays the same for 5 s.
+deadline=$((SECONDS + 90))
+rev="${rev_before}"
+while :; do
+  [ "${SECONDS}" -lt "${deadline}" ] || fail "profile revision did not settle after repo add"
+  sleep 5
+  now_rev="$(db_revision)"
+  [ "${now_rev}" != "${rev_before}" ] && [ "${now_rev}" = "${rev}" ] && break
+  rev="${now_rev}"
 done
 out="$(backup_now)"; echo "${out}"
 echo "${out}" | grep -Eq "wrote profile-state\.db\.backup\.[0-9]+-[0-9a-f-]{36}\.db \(revision ${rev}\)" \
   || fail "no backup copy of revision ${rev} after a profile change"
 docker exec "${NAME}" sh -c 'for f in /home/.config/orca/profiles/*/profile-state.db.backup.*.db; do
     [ "$(sqlite3 -batch -init /dev/null "$f" "PRAGMA quick_check;")" = ok ] || exit 1; done' || fail "a backup is not a valid database"
-out="$(backup_now)"; echo "${out}"
-echo "${out}" | grep -q "renamed .*(revision ${rev} unchanged)" || fail "unchanged database was copied, not renamed"
-pass "orca-profile-backup: copy on change, rename when unchanged, valid databases"
+if [ "$(db_revision)" = "${rev}" ]; then
+  out="$(backup_now)"; echo "${out}"
+  echo "${out}" | grep -q "renamed .*(revision ${rev} unchanged)" || fail "unchanged database was copied, not renamed"
+fi
+# Pruning: add 6 copies with old timestamps (year 2001), force a pass, and
+# expect the newest 5 to remain: all real backups (a pass may rename one, so
+# count them), and not the oldest copy.
+list_backups() { docker exec "${NAME}" sh -c 'ls /home/.config/orca/profiles/*/' | grep '^profile-state\.db\.backup\.' || true; }
+count_real() { list_backups | grep -c '^profile-state\.db\.backup\.1[7-9][0-9]\{11\}-' || true; }
+real_before="$(count_real)"
+docker exec "${NAME}" sh -c 'cd /home/.config/orca/profiles/* && src=$(ls profile-state.db.backup.*.db | head -n 1) &&
+  for i in 1 2 3 4 5 6; do cp "$src" "profile-state.db.backup.100000000000$i-$(cat /proc/sys/kernel/random/uuid).db"; done'
+backup_now > /dev/null
+total="$(list_backups | grep -c . || true)"
+[ "${total}" = "5" ] || fail "expected 5 backups after pruning, found ${total}"
+[ "$(count_real)" = "${real_before}" ] || fail "pruning removed a real backup (${real_before} before, $(count_real) after)"
+list_backups | grep -q '^profile-state\.db\.backup\.1000000000001-' && fail "pruning kept the oldest backup"
+# The entrypoint runs the loop (ORCA_PROFILE_BACKUP=on).
+docker exec "${NAME}" pgrep -f 'orca-profile-backup --loop' > /dev/null || fail "orca-profile-backup loop is not running"
+docker logs "${NAME}" 2>&1 | grep -q 'writing Orca profile backups' || fail "entrypoint did not start orca-profile-backup"
+pass "orca-profile-backup: copy on change, rename when unchanged, valid databases, keeps 5, loop running"
 
 echo "== restart"
 ready_count="$(docker logs "${NAME}" 2>&1 | grep -c '^Orca server ready')"

@@ -31,6 +31,24 @@ sql() { sqlite3 -batch -init /dev/null "$@"; }
 
 revision() { sql "$1" "SELECT value FROM profile_state_meta WHERE key = 'revision';" 2>/dev/null || true; }
 
+# fingerprint <db>: revision, profile ID and the hash of each document. Empty
+# when the query fails. A re-created database can repeat a revision number,
+# so the revision alone does not prove "unchanged".
+fingerprint() {
+  sql "$1" "SELECT (SELECT value FROM profile_state_meta WHERE key = 'revision')
+    || '|' || (SELECT value FROM profile_state_meta WHERE key = 'profile_id')
+    || '|' || (SELECT group_concat(domain || ':' || content_hash, ',')
+               FROM (SELECT domain, content_hash FROM profile_state_documents ORDER BY domain));" \
+    2>/dev/null || true
+}
+
+# prune <dir>: keep the newest KEEP backups.
+prune() {
+  backups "$1" | tail -n +$((KEEP + 1)) | while read -r _ name; do
+    rm -f "$1/${name}"
+  done
+}
+
 # backups <dir>: print "<ms> <name>" for each Orca backup in <dir>, newest first.
 backups() {
   local name
@@ -41,7 +59,7 @@ backups() {
 }
 
 backup_profile() {
-  local db="$1" dir now newest newest_ms newest_name target tmp db_rev
+  local db="$1" dir now newest newest_ms newest_name target tmp db_fp
   dir="$(dirname "${db}")"
   now="$(date +%s%3N)"
   newest="$(backups "${dir}" | head -n 1)"
@@ -52,11 +70,12 @@ backup_profile() {
   fi
   target="${dir}/profile-state.db.backup.${now}-$(cat /proc/sys/kernel/random/uuid).db"
 
-  db_rev="$(revision "${db}")"
-  if [ -n "${newest}" ] && [ -n "${db_rev}" ] && [ "${db_rev}" = "$(revision "${dir}/${newest_name}")" ]; then
+  db_fp="$(fingerprint "${db}")"
+  if [ -n "${newest}" ] && [ -n "${db_fp}" ] && [ "${db_fp}" = "$(fingerprint "${dir}/${newest_name}")" ]; then
     mv -f "${dir}/${newest_name}" "${target}"
     sync "${dir}"
-    log "renamed ${newest_name} -> ${target##*/} (revision ${db_rev} unchanged)"
+    log "renamed ${newest_name} -> ${target##*/} (revision $(revision "${target}") unchanged)"
+    prune "${dir}"
     return 0
   fi
 
@@ -74,10 +93,7 @@ backup_profile() {
     log "backup of ${db} failed"
     return 1
   fi
-
-  backups "${dir}" | tail -n +$((KEEP + 1)) | while read -r _ name; do
-    rm -f "${dir}/${name}"
-  done
+  prune "${dir}"
 }
 
 pass() {
