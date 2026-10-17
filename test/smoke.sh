@@ -123,7 +123,7 @@ echo "${out}" | grep -Eq '(wrote|renamed) profile-state\.db\.backup\.' || fail "
 # A profile change: register a project through the paired client.
 docker exec "${NAME}" sh -c 'git init -q -b main /home/smoke-repo && git -C /home/smoke-repo commit -q --allow-empty -m init'
 rev_before="$(db_revision)"
-client repo add --path /home/smoke-repo --json > "${WORK}/repo.json" || { cat "${WORK}/repo.json" >&2; fail "repo add"; }
+client repo add --environment smoke --path /home/smoke-repo --json > "${WORK}/repo.json" || { cat "${WORK}/repo.json" >&2; fail "repo add"; }
 # Orca saves profile state after a short delay.
 deadline=$((SECONDS + 60))
 until rev="$(db_revision)" && [ "${rev}" != "${rev_before}" ]; do
