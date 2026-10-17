@@ -3,21 +3,33 @@
 #
 # Orca stages each backup in a file named about 183 bytes long. Encrypted
 # Synology shared folders (eCryptfs) allow 143 bytes, so Orca's backup job
-# fails with ENAMETOOLONG and retries every minute. Orca skips its job while a
-# backup younger than one hour exists. This script makes that backup the way
-# Orca does (SQLite backup API, journal_mode=DELETE, check, fsync, rename) and
-# gives it Orca's final name, which is short enough.
+# fails with ENAMETOOLONG. Orca skips its job while a backup younger than one
+# hour exists (it reads the age from the name). This script keeps such a
+# backup: it copies the database the way Orca does (SQLite backup API,
+# journal_mode=DELETE, check, fsync, rename) under Orca's final name, which is
+# short enough. When the database has not changed since the newest backup, it
+# renames that backup to a new ID instead, so the older backups keep older states.
 #
 #   orca-profile-backup          one pass over all profiles
-#   orca-profile-backup --loop   one pass every minute (the entrypoint starts this)
+#   orca-profile-backup --loop   one pass every minute, every 10 s while no
+#                                profile exists yet (the entrypoint starts this)
+#
+# ORCA_PROFILE_BACKUP_MAX_AGE_MS: refresh a backup older than this (default
+# 50 minutes, under Orca's 60). The smoke test sets 0 to force a pass.
 set -euo pipefail
+umask 077
 
 PROFILES_DIR="${HOME}/.config/orca/profiles"
-KEEP=5                       # Orca keeps 5 backups too
-MAX_AGE_MS=$((50 * 60 * 1000))  # younger than Orca's 60 minutes, so Orca never starts its job
+KEEP=5  # Orca keeps 5 backups too
+MAX_AGE_MS="${ORCA_PROFILE_BACKUP_MAX_AGE_MS:-$((50 * 60 * 1000))}"
 BACKUP_RE='^profile-state\.db\.backup\.([1-9][0-9]*)-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.db$'
 
-log() { echo "[orca-profile-backup] $*" >&2; }
+log() { echo "[orca-profile-backup] $(date -u +%FT%TZ) $*"; }
+
+# sql <db> <statements...>: the sqlite3 CLI without ~/.sqliterc.
+sql() { sqlite3 -batch -init /dev/null "$@"; }
+
+revision() { sql "$1" "SELECT value FROM profile_state_meta WHERE key = 'revision';" 2>/dev/null || true; }
 
 # backups <dir>: print "<ms> <name>" for each Orca backup in <dir>, newest first.
 backups() {
@@ -29,24 +41,34 @@ backups() {
 }
 
 backup_profile() {
-  local db="$1" dir now newest id tmp target
+  local db="$1" dir now newest newest_ms newest_name target tmp db_rev
   dir="$(dirname "${db}")"
   now="$(date +%s%3N)"
-  newest="$(backups "${dir}" | head -n 1 | cut -d' ' -f1)"
-  if [ -n "${newest}" ] && [ $((now - newest)) -lt "${MAX_AGE_MS}" ]; then
+  newest="$(backups "${dir}" | head -n 1)"
+  newest_ms="${newest%% *}"
+  newest_name="${newest#* }"
+  if [ -n "${newest}" ] && [ $((now - newest_ms)) -lt "${MAX_AGE_MS}" ]; then
+    return 0
+  fi
+  target="${dir}/profile-state.db.backup.${now}-$(cat /proc/sys/kernel/random/uuid).db"
+
+  db_rev="$(revision "${db}")"
+  if [ -n "${newest}" ] && [ -n "${db_rev}" ] && [ "${db_rev}" = "$(revision "${dir}/${newest_name}")" ]; then
+    mv -f "${dir}/${newest_name}" "${target}"
+    sync "${dir}"
+    log "renamed ${newest_name} -> ${target##*/} (revision ${db_rev} unchanged)"
     return 0
   fi
 
-  id="${now}-$(cat /proc/sys/kernel/random/uuid)"
-  tmp="${dir}/.orca-docker-backup.tmp"
-  target="${dir}/profile-state.db.backup.${id}.db"
+  tmp="${dir}/.odb.$$.tmp"
   rm -f "${tmp}" "${tmp}-journal" "${tmp}-wal" "${tmp}-shm"
-  if sqlite3 "${db}" ".timeout 30000" ".backup '${tmp}'" \
-    && [ "$(sqlite3 "${tmp}" 'PRAGMA journal_mode=DELETE;')" = "delete" ] \
-    && [ "$(sqlite3 "${tmp}" 'PRAGMA quick_check;')" = "ok" ]; then
-    chmod 0600 "${tmp}"
+  if sql "${db}" ".timeout 30000" ".backup '${tmp}'" \
+    && [ "$(sql "${tmp}" 'PRAGMA journal_mode=DELETE;')" = "delete" ] \
+    && [ "$(sql "${tmp}" 'PRAGMA quick_check;')" = "ok" ]; then
     sync "${tmp}"
     mv -f "${tmp}" "${target}"
+    sync "${dir}"
+    log "wrote ${target##*/} (revision $(revision "${target}"))"
   else
     rm -f "${tmp}" "${tmp}-journal" "${tmp}-wal" "${tmp}-shm"
     log "backup of ${db} failed"
@@ -69,7 +91,7 @@ pass() {
 if [ "${1:-}" = "--loop" ]; then
   while true; do
     pass
-    sleep 60
+    if compgen -G "${PROFILES_DIR}/*/profile-state.db" > /dev/null; then sleep 60; else sleep 10; fi
   done
 fi
 pass

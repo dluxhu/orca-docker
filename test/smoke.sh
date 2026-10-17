@@ -98,17 +98,6 @@ for tool in git gh ssh docker node npm python3 rg Xvfb; do
 done
 pass "toolbox present"
 
-# CI has no eCryptfs, so the test forces orca-profile-backup on (ORCA_PROFILE_BACKUP=on).
-deadline=$((SECONDS + 120))
-until docker exec "${NAME}" sh -c 'ls /home/.config/orca/profiles/*/ 2>/dev/null' \
-    | grep -Eq '^profile-state\.db\.backup\.[1-9][0-9]*-[0-9a-f-]{36}\.db$'; do
-  [ "${SECONDS}" -lt "${deadline}" ] || fail "orca-profile-backup wrote no backup in 120s"
-  sleep 5
-done
-docker exec "${NAME}" sh -c 'for f in /home/.config/orca/profiles/*/profile-state.db.backup.*.db; do
-    [ "$(sqlite3 "$f" "PRAGMA quick_check;")" = ok ] || exit 1; done' || fail "profile backup is not a valid database"
-pass "orca-profile-backup wrote a valid Orca backup"
-
 echo "== pair a client"
 url1="$(pairing_url)"
 [ -n "${url1}" ] || fail "no Pairing URL printed"
@@ -120,6 +109,35 @@ client status --environment smoke --json > "${WORK}/status1.json" || { cat "${WO
 grep -q '"connectionState": "connected"' "${WORK}/status1.json" || { cat "${WORK}/status1.json" >&2; fail "client not connected"; }
 grep -q '"state": "ready"' "${WORK}/status1.json" || fail "runtime not ready"
 pass "client paired and connected"
+
+echo "== orca-profile-backup"
+# CI has no eCryptfs, so Orca's own backup job works here too. Force the
+# script with age 0 and check each path by its log line.
+backup_now() { docker exec -e ORCA_PROFILE_BACKUP_MAX_AGE_MS=0 "${NAME}" orca-profile-backup; }
+db_revision() {
+  docker exec "${NAME}" sh -c 'sqlite3 -batch -init /dev/null /home/.config/orca/profiles/*/profile-state.db \
+    "SELECT value FROM profile_state_meta WHERE key = '"'revision'"';"'
+}
+out="$(backup_now)"; echo "${out}"
+echo "${out}" | grep -Eq '(wrote|renamed) profile-state\.db\.backup\.' || fail "first forced pass made no backup"
+# A profile change: register a project through the paired client.
+docker exec "${NAME}" sh -c 'git init -q -b main /home/smoke-repo && git -C /home/smoke-repo commit -q --allow-empty -m init'
+rev_before="$(db_revision)"
+client repo add --path /home/smoke-repo --json > "${WORK}/repo.json" || { cat "${WORK}/repo.json" >&2; fail "repo add"; }
+# Orca saves profile state after a short delay.
+deadline=$((SECONDS + 60))
+until rev="$(db_revision)" && [ "${rev}" != "${rev_before}" ]; do
+  [ "${SECONDS}" -lt "${deadline}" ] || fail "profile revision did not change after repo add"
+  sleep 2
+done
+out="$(backup_now)"; echo "${out}"
+echo "${out}" | grep -Eq "wrote profile-state\.db\.backup\.[0-9]+-[0-9a-f-]{36}\.db \(revision ${rev}\)" \
+  || fail "no backup copy of revision ${rev} after a profile change"
+docker exec "${NAME}" sh -c 'for f in /home/.config/orca/profiles/*/profile-state.db.backup.*.db; do
+    [ "$(sqlite3 -batch -init /dev/null "$f" "PRAGMA quick_check;")" = ok ] || exit 1; done' || fail "a backup is not a valid database"
+out="$(backup_now)"; echo "${out}"
+echo "${out}" | grep -q "renamed .*(revision ${rev} unchanged)" || fail "unchanged database was copied, not renamed"
+pass "orca-profile-backup: copy on change, rename when unchanged, valid databases"
 
 echo "== restart"
 ready_count="$(docker logs "${NAME}" 2>&1 | grep -c '^Orca server ready')"

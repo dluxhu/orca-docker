@@ -52,6 +52,9 @@ bin/bump-orca              set ORCA_VERSION and .deb checksums from a GitHub rel
 - With `--mobile-pairing` there is no desktop or browser link (Orca makes one link per scope).
 - SSH targets on the server are configured from a paired desktop client (Settings → SSH). This
   path is not covered by CI.
+- `orca-profile-backup` differs from Orca's own backup write: it does not run Orca's document
+  check on the staged copy (only `quick_check`), and it does not register as a profile-state
+  participant. Restore accepts its files (regular file, no sidecars, journal_mode delete).
 
 ## Local testing without Docker
 

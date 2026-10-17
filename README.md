@@ -173,13 +173,17 @@ long, so that backup fails and Orca logs `Failed to back up profile state databa
 profile change.
 
 The image handles this. When `HOME_DIR` rejects long names, the entrypoint starts
-`orca-profile-backup`. It writes the same backup as Orca (SQLite backup API, checked, fsynced,
-renamed) with a short temporary name, under Orca's own final name, and keeps 5 like Orca.
-Orca skips its own job while a backup younger than one hour exists. `ORCA_PROFILE_BACKUP=on`
-or `off` overrides the detection. Log: `.config/orca-docker/profile-backup.log`.
+`orca-profile-backup`. Orca skips its own job while a backup younger than one hour exists, so the
+script keeps one: about every 50 minutes it copies the database with the SQLite backup API
+(checked, fsynced, renamed into place) under Orca's own backup name, which is short enough. When
+nothing changed since the newest backup, it gives that backup a new name instead of copying, so
+the older backups keep older states. It keeps 5, like Orca. `ORCA_PROFILE_BACKUP=on` or `off`
+overrides the detection. Log: `.config/orca-docker/profile-backup.log`.
 
-Tested on an encrypted shared folder: without the script a project change logs
-`ENAMETOOLONG`; with it, no error.
+When a profile is new, Orca tries its first backup before the script has made one, so the log
+can show one `Failed to back up profile state database` line. After that there are none.
+Tested on an encrypted shared folder with Orca 1.4.227: without the script, each project change
+logged `ENAMETOOLONG`; with it, none did.
 
 ## How it works
 
